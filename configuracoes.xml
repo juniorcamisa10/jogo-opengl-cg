@@ -1,0 +1,7 @@
+<jogo>
+  <arena largura="500" altura="700" />
+  <jogador raioCabeca="20" velocidade="0.2" velocidadeGiro="0.12" limiteGiroArma="60" />
+  <barril largura="80" altura="50" velocidade="0.1" resistencia="4" chanceInimigo="0.5" />
+  <partida barrisParaGanhar="6" />
+  <tiro cadencia="2" velocidade="0.2" />
+</jogo>
