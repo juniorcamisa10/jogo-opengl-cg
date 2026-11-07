@@ -1,8 +1,6 @@
 #include <GL/gl.h>
-#include <GL/glu.h>
 #include <GL/glut.h>
 #include <iostream>
-#include <stdlib.h>
 #include <string>
 #include <math.h>
 #include <stdio.h>
@@ -39,11 +37,11 @@ int ultimaPosMouse = -1;
 int mouseX;
 
 //Componentes do mundo virtual sendo modelado
-Player player;
+Player *player = new Player();
 std::list<Tiro*> tiros;
 std::list<Tiro*> tirosInimigos;
 float tempoEntreTiros = 0.0f;
-Barril alvo(0, 250);
+Barril *alvo = new Barril(0, 250);
 Player *inimigo = new Player(0, 250+20);
 
 enum EstadoJogo { JOGANDO, VITORIA, DERROTA, MENU };
@@ -70,7 +68,8 @@ bool carregarConfiguracoesXML(){
     tinyxml2::XMLElement* jogador = root->FirstChildElement("jogador");
     if (jogador) {
         jogador->QueryFloatAttribute("raioCabeca", &raioCabecaJogador);
-        player.defineRaio(raioCabecaJogador);
+        player->defineRaio(raioCabecaJogador);
+        player->MudaY((-alturaArena/2)+raioCabecaJogador);
         jogador->QueryFloatAttribute("raioCabeca", &raioCabecaInimigo);
         jogador->QueryFloatAttribute("velocidade", &velocidadeJogador);
         jogador->QueryFloatAttribute("velocidadeGiro", &velocidadeGiro);
@@ -84,9 +83,9 @@ bool carregarConfiguracoesXML(){
         barril->QueryFloatAttribute("velocidade", &velocidadeBarril);
         barril->QueryIntAttribute("resistencia", &resistenciaBarril);
         barril->QueryFloatAttribute("chanceInimigo", &chanceInimigo);
-        alvo.SetElementos(velocidadeBarril, larguraBarril, alturaBarril, resistenciaBarril, chanceInimigo);
+        alvo->SetElementos(velocidadeBarril, larguraBarril, alturaBarril, resistenciaBarril, chanceInimigo);
         if(((rand() % 100) / 100.0f) < chanceInimigo){
-            alvo.SetTemInimigo(true);
+            alvo->SetTemInimigo(true);
         }
         inimigo->defineRaio(raioCabecaInimigo);
         inimigo->defineAnguloInicial(180.0f);
@@ -149,6 +148,20 @@ void desenharTextoStroke(void *fonte, GLfloat x, GLfloat y, GLfloat escala, cons
 
 }
 
+void deletaObjetos(){
+    for (Tiro* t : tiros) {
+        delete t;
+    }
+    tiros.clear();
+    for (Tiro* i : tirosInimigos){
+        delete i;
+    }
+    tirosInimigos.clear();
+    if(inimigo != NULL) delete inimigo;
+    if(player != NULL) delete player;
+    if(alvo != NULL) delete alvo;
+}
+
 void TelaFinal(){
     glClear(GL_COLOR_BUFFER_BIT);
     glLoadIdentity();
@@ -177,8 +190,6 @@ void TelaFinal(){
         x = (-(calculaLarguraTexto(GLUT_STROKE_ROMAN, opcao2)*escala))/2.0f;
         desenharTextoStroke(GLUT_STROKE_ROMAN, x, -30.0f, escala, opcao2);
     }
-
-    glutSwapBuffers();
 }
 
 void desenhaMenu(){
@@ -227,6 +238,44 @@ void resetaJogo(){
     tempoEntreTiros = 0.0f;
     atingido = 0;
     barrisDestruidos = 0;
+    tiros.clear();
+    tirosInimigos.clear();
+    if(inimigo != NULL){
+        delete inimigo;
+        inimigo = NULL;
+    }
+    if(player != NULL){
+        delete player;
+        player = NULL;
+    }
+    if(alvo != NULL){
+        delete alvo;
+        alvo = NULL;
+    }
+    // Calcula uma posição X inicial aleatória dentro da arena (igual ao spawn normal)
+    float xMin = -(larguraArena / 2.0f) + (larguraBarril / 2.0f);
+    float xMax = (larguraArena / 2.0f) - (larguraBarril / 2.0f);
+    float xSpawn = (xMin + (rand() % (int)(xMax - xMin + 1)));
+    float ySpawn = (alturaArena / 2.0f) + alturaBarril; // Nasce logo acima da tela visível
+
+    // Aloca novas instâncias
+    player = new Player(0, (-alturaArena/2)+raioCabecaJogador);
+    alvo = new Barril(xSpawn, ySpawn);
+    inimigo = new Player(xSpawn, ySpawn + (alturaBarril / 2));
+
+    // REAPLICA TODAS AS CONFIGURAÇÕES DO XML (Essencial para não zerar os raios e tamanhos!)
+    player->defineRaio(raioCabecaJogador);
+    player->mudaCor(0.35f, 0.78f, 0.32f);
+
+    alvo->SetElementos(velocidadeBarril, larguraBarril, alturaBarril, resistenciaBarril, chanceInimigo);
+    if(((rand() % 100) / 100.0f) < chanceInimigo){
+        alvo->SetTemInimigo(true);
+    }
+
+    inimigo->defineRaio(raioCabecaInimigo);
+    inimigo->defineAnguloInicial(180.0f);
+    inimigo->mudaCor(0.65f, 0.25f, 0.85f);
+
 }
 
 void renderScene(void)
@@ -248,7 +297,15 @@ void renderScene(void)
         glVertex2f(larguraArena/2, -alturaArena/2);
         glEnd();
 
-        player.Desenha();
+        
+        glBegin(GL_LINES);
+            glColor3f(1.0f, 1.0f, 1.0f);
+            glLineWidth(2.0f);
+            glVertex2f(-larguraArena/2, 0);
+            glVertex2f(larguraArena/2, 0);
+        glEnd();
+
+        player->Desenha();
         
         // Anda pela lista de tiros e desenha um por um
         for (Tiro* t : tiros) {
@@ -260,8 +317,8 @@ void renderScene(void)
             t->Desenha();
         }
         
-        alvo.Desenha();
-        if(alvo.TemInimigo()){
+        alvo->Desenha();
+        if(alvo->TemInimigo()){
             inimigo->Desenha();
         }
 
@@ -339,14 +396,8 @@ void keyPress(unsigned char key, int x, int y)
              }
              break;
         case 27 :
-            //Deleta todos os tiros alocados, caso o usuário aperte ESC para sair do jogo
-             for (Tiro* t : tiros) {
-             delete t;
-             }
-             tiros.clear();
-             if(inimigo != NULL){
-                delete inimigo;
-             }
+            //Deleta todos os objetos alocados, caso o usuário aperte ESC para sair do jogo
+             deletaObjetos();
              exit(0);
     }
     glutPostRedisplay();
@@ -375,7 +426,7 @@ void init(void)
     ResetKeyStatus();
     keyStatus[(int)('o')] = 1;
 
-    player.mudaCor(0.35f, 0.78f, 0.32f);
+    player->mudaCor(0.35f, 0.78f, 0.32f);
 
     // The color the windows will redraw. Its done to erase the previous frame.
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black, no opacity(alpha).
@@ -407,71 +458,76 @@ void idle(void)
         //Atualiza o tempo do ultimo frame ocorrido
         previousTime = currentTime;
 
+        if(timeDiference > 100){
+            return;
+        }
+
         //Treat keyPress
         if(keyStatus[(int)('s')])
         {
-            player.MoveEmX(timeDiference*velocidadeJogador);
-            player.MoveEmY(timeDiference*velocidadeJogador);
+            player->MoveEmX(timeDiference*velocidadeJogador);
+            player->MoveEmY(timeDiference*velocidadeJogador);
         }
         if(keyStatus[(int)('w')])
         {
-            player.MoveEmX(-timeDiference*velocidadeJogador);
-            player.MoveEmY(-timeDiference*velocidadeJogador);
+            player->MoveEmX(-timeDiference*velocidadeJogador);
+            player->MoveEmY(-timeDiference*velocidadeJogador);
         }
         if(keyStatus[(int)('a')])
         {
-            player.RodaBraco1(timeDiference*velocidadeGiro);
+            player->RodaBraco1(timeDiference*velocidadeGiro);
         }
         if(keyStatus[(int)('d')])
         {
-            player.RodaBraco1(-timeDiference*velocidadeGiro);
+            player->RodaBraco1(-timeDiference*velocidadeGiro);
         }
         
         //Trata colisão com as paredes da janela
         //Colisão em X
-        if (player.ObtemX() - raioCabecaJogador < -(larguraArena/2)){
-            player.MudaX(-(larguraArena/2)+raioCabecaJogador);
+        if (player->ObtemX() - raioCabecaJogador < -(larguraArena/2)){
+            player->MudaX(-(larguraArena/2)+raioCabecaJogador);
         }
-        else if (player.ObtemX() + raioCabecaJogador > (larguraArena/2)){
-            player.MudaX((larguraArena/2)-raioCabecaJogador);
+        else if (player->ObtemX() + raioCabecaJogador > (larguraArena/2)){
+            player->MudaX((larguraArena/2)-raioCabecaJogador);
         }
         //Colisão em Y
-        if (player.ObtemY() - raioCabecaJogador < -(alturaArena/2)){
-            player.MudaY(-(alturaArena/2)+raioCabecaJogador);
+        if (player->ObtemY() - raioCabecaJogador < -(alturaArena/2)){
+            player->MudaY(-(alturaArena/2)+raioCabecaJogador);
         }
-        else if (player.ObtemY() + raioCabecaJogador > (alturaArena/2)){
-            player.MudaY((alturaArena/2)-raioCabecaJogador);
+        else if (player->ObtemY() + raioCabecaJogador > 0){
+            player->MudaY(0-raioCabecaJogador);
         }
         
         //Mira da Arma
         int deltaX = mouseX - ultimaPosMouse;
         float sensibilidade = 0.5f;
 
-        player.RodaBraco2(-deltaX * sensibilidade);
+        player->RodaBraco2(-deltaX * sensibilidade);
 
-        GLfloat theta2 = player.ObtemTheta2();
+        GLfloat theta2 = player->ObtemTheta2();
         if(theta2 > limiteGiroArma/2){
-            player.MudaTheta2(limiteGiroArma/2);
+            player->MudaTheta2(limiteGiroArma/2);
         }
         else if(theta2 < -limiteGiroArma/2){
-            player.MudaTheta2(-limiteGiroArma/2);
+            player->MudaTheta2(-limiteGiroArma/2);
         }
         ultimaPosMouse = mouseX;
 
         //Trata o movimento do barril
-        alvo.Move(timeDiference);
+        alvo->Move(timeDiference);
         inimigo->andaComBarril(timeDiference, velocidadeBarril);
-        if(alvo.ObtemY() + alturaBarril < - (alturaArena/2)){
+        if(alvo->ObtemY() + alturaBarril < - (alturaArena/2)){
             float xMin = -(larguraArena / 2.0f) + (larguraBarril / 2.0f);
             float xMax = (larguraArena / 2.0f) - (larguraBarril / 2.0f);
             float xSpawn = xMin + (rand() % (int)(xMax - xMin + 1));
+            float ySpawn = (alturaArena / 2.0f) + alturaBarril; // Nasce logo acima da tela visível
             delete inimigo;
-            alvo.Recria(xSpawn, 250);
-            alvo.SetElementos(velocidadeBarril, larguraBarril, alturaBarril, resistenciaBarril, chanceInimigo);
+            alvo->Recria(xSpawn, ySpawn);
+            alvo->SetElementos(velocidadeBarril, larguraBarril, alturaBarril, resistenciaBarril, chanceInimigo);
             if(((rand() % 100) / 100.0f) < chanceInimigo){
-                alvo.SetTemInimigo(true);
+                alvo->SetTemInimigo(true);
             }
-            inimigo = new Player(xSpawn, 250+(alturaBarril/2));
+            inimigo = new Player(xSpawn, ySpawn+(alturaBarril/2));
             inimigo->defineRaio(raioCabecaInimigo);
             inimigo->defineAnguloInicial(180.0f);
             inimigo->mudaCor(0.65f, 0.25f, 0.85f);
@@ -482,12 +538,12 @@ void idle(void)
         if(keyStatus[(int)('o')]){
 
             GLfloat playerX, playerY;
-            player.GetPos(playerX, playerY);
+            player->GetPos(playerX, playerY);
 
-            GLfloat barrilEsquerda = alvo.ObtemX() - (larguraBarril/2.0f);
-            GLfloat barrilDireita = alvo.ObtemX() + (larguraBarril/2.0f);
-            GLfloat barrilBaixo = alvo.ObtemY();
-            GLfloat barrilCima = alvo.ObtemY() + alturaBarril;
+            GLfloat barrilEsquerda = alvo->ObtemX() - (larguraBarril/2.0f);
+            GLfloat barrilDireita = alvo->ObtemX() + (larguraBarril/2.0f);
+            GLfloat barrilBaixo = alvo->ObtemY();
+            GLfloat barrilCima = alvo->ObtemY() + alturaBarril;
 
             // Encontra o ponto mais próximo do centro do player dentro do retângulo do barril
             GLfloat pontoProximoX = playerX;
@@ -514,6 +570,8 @@ void idle(void)
             // Se a distância for menor que o raio do círculo ao quadrado, colidiu!
             if (distanciaQuadrada <= (raioCabecaJogador * raioCabecaJogador)) {
                 estado = DERROTA;
+                glutPostRedisplay();
+                return;
             }
         }
 
@@ -524,23 +582,26 @@ void idle(void)
             while (it != tiros.end()){
                 Tiro *atual = *it;
                 atual->Move(timeDiference);
-                if (alvo.Atingido(atual)){
+                if (alvo->Atingido(atual)){
                     atingido += 1;
-                    if(alvo.Morreu()){
+                    if(alvo->Morreu()){
                         barrisDestruidos += 1;
                         if(barrisDestruidos == barrisParaGanhar){
                             estado = VITORIA;
+                            glutPostRedisplay();
+                            return;
                         }
                         float xMin = -(larguraArena / 2.0f) + (larguraBarril / 2.0f);
                         float xMax = (larguraArena / 2.0f) - (larguraBarril / 2.0f);
                         float xSpawn = xMin + (rand() % (int)(xMax - xMin + 1));
+                        float ySpawn = (alturaArena / 2.0f) + alturaBarril; // Nasce logo acima da tela visível
                         delete inimigo;
-                        alvo.Recria(xSpawn, 250);
-                        alvo.SetElementos(velocidadeBarril, larguraBarril, alturaBarril, resistenciaBarril, chanceInimigo);
+                        alvo->Recria(xSpawn, ySpawn);
+                        alvo->SetElementos(velocidadeBarril, larguraBarril, alturaBarril, resistenciaBarril, chanceInimigo);
                         if(((rand() % 100) / 100.0f) < chanceInimigo){
-                            alvo.SetTemInimigo(true);
+                            alvo->SetTemInimigo(true);
                         }
-                        inimigo = new Player(xSpawn, 250+(alturaBarril/2));
+                        inimigo = new Player(xSpawn, ySpawn+(alturaBarril/2));
                         inimigo->defineRaio(raioCabecaInimigo);
                         inimigo->defineAnguloInicial(180.0f);
                         inimigo->mudaCor(0.65f, 0.25f, 0.85f);
@@ -560,9 +621,9 @@ void idle(void)
 
         //Trata da IA dos inimigos
         if(keyStatus[(int)('o')]){
-            if (inimigo != NULL && alvo.TemInimigo()) {
+            if (inimigo != NULL && alvo->TemInimigo()) {
                 GLfloat pX, pY, inimigoX, inimigoY;
-                player.GetPos(pX, pY);
+                player->GetPos(pX, pY);
                 inimigo->GetPos(inimigoX, inimigoY);
 
                 //Calcula o vetor direção do inimigo até o jogador
@@ -605,12 +666,13 @@ void idle(void)
                     atual->Move(timeDiference);
                     GLfloat xPlayer, yPlayer, xTiro, yTiro;
                     atual->GetPos(xTiro, yTiro);
-                    player.GetPos(xPlayer, yPlayer);
+                    player->GetPos(xPlayer, yPlayer);
                     float distanciaEntreCentros = sqrtf(powf(xPlayer - xTiro, 2) + powf(yPlayer - yTiro, 2));
 
                     if(distanciaEntreCentros < raioTiro+raioCabecaJogador){
                         estado = DERROTA;
-                        //return;
+                        glutPostRedisplay();
+                        return;
                     }
                     ++it;
                 }
@@ -624,14 +686,7 @@ void idle(void)
                 estado = JOGANDO;
             }
             else{
-                //Deleta todos os tiros alocados
-                for (Tiro* t : tiros) {
-                    delete t;
-                }
-                tiros.clear();
-                if(inimigo != NULL){
-                    delete inimigo;
-                }
+                deletaObjetos();
                 exit(0);
             }
         }
@@ -651,7 +706,7 @@ void movimentoMouse(int x, int y){
 
 void mouseClick(int button, int state, int x, int y){
     if(button == GLUT_LEFT_BUTTON && state == GLUT_DOWN){
-        tiros.push_back(player.Atira(velocidadeTiro));
+        tiros.push_back(player->Atira(velocidadeTiro));
     }
 }
  
